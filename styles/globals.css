@@ -18,6 +18,18 @@ body.game-active {
   height: 100%;
 }
 
+/* 改善移动设备上的触摸体验 */
+button {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* 确保移动设备上的交互元素有足够大的点击区域 */
+a, button, [role="button"] {
+  min-height: 44px;
+  min-width: 44px;
+}
+
 /* 自定义滚动条 */
 ::-webkit-scrollbar {
   width: 8px;

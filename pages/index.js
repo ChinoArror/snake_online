@@ -61,6 +61,13 @@ export default function Home() {
     resetGame();
   }, [gameSize]);
   
+  // 确保游戏区域获得焦点，以便键盘事件能被正确捕获
+  useEffect(() => {
+    if (gameAreaRef.current) {
+      gameAreaRef.current.focus();
+    }
+  }, []);
+  
   // 游戏时间计时器
   useEffect(() => {
     let timer;
@@ -201,7 +208,17 @@ export default function Home() {
   // 键盘控制
   useEffect(() => {
     const handleKeyDown = (e) => {
-      // e.preventDefault(); // 去掉阻止默认行为，允许方向键和wasd键正常工作
+      // 只有在游戏区域内或者按键是方向键、WASD或空格时才阻止默认行为
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'w', 'W', 'a', 'A', 's', 'S', 'd', 'D', ' '].includes(e.key)) {
+        // 阻止空格键的默认滚动行为
+        if (e.key === ' ') {
+          e.preventDefault();
+        }
+        // 阻止方向键的默认滚动行为
+        if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+          e.preventDefault();
+        }
+      }
       
       if (gameOver) return;
       
@@ -234,7 +251,10 @@ export default function Home() {
       }
     };
 
+    // 添加键盘事件监听
     window.addEventListener('keydown', handleKeyDown);
+    
+    // 清理函数
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [direction, gameOver]);
 
@@ -245,11 +265,17 @@ export default function Home() {
       x: touch.clientX,
       y: touch.clientY
     });
-    e.preventDefault(); // 防止页面滚动
+    // 仅在游戏区域内阻止默认行为
+    if (e.target.closest(`.${styles.gameArea}`)) {
+      e.preventDefault();
+    }
   };
 
   const handleTouchMove = (e) => {
-    e.preventDefault(); // 防止页面滚动
+    // 仅在游戏区域内阻止默认行为
+    if (e.target.closest(`.${styles.gameArea}`)) {
+      e.preventDefault();
+    }
   };
 
   const handleTouchEnd = (e) => {
@@ -276,7 +302,10 @@ export default function Home() {
       }
     }
     
-    e.preventDefault(); // 防止页面滚动
+    // 仅在游戏区域内阻止默认行为
+    if (e.target.closest(`.${styles.gameArea}`)) {
+      e.preventDefault();
+    }
   };
 
   // 方向按钮控制
@@ -424,6 +453,9 @@ export default function Home() {
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
+          tabIndex="0" /* 使div可以接收键盘焦点 */
+          role="button" /* 为了可访问性 */
+          aria-label="游戏区域"
         >
           {renderGrid()}
           
@@ -456,7 +488,9 @@ export default function Home() {
             <button 
               className={styles.controlButton} 
               onClick={() => handleDirectionClick('UP')}
+              onTouchStart={() => handleDirectionClick('UP')}
               aria-label="向上"
+              type="button"
             >
               ↑
             </button>
@@ -465,21 +499,27 @@ export default function Home() {
             <button 
               className={styles.controlButton} 
               onClick={() => handleDirectionClick('LEFT')}
+              onTouchStart={() => handleDirectionClick('LEFT')}
               aria-label="向左"
+              type="button"
             >
               ←
             </button>
             <button 
               className={styles.controlButton} 
               onClick={() => handleDirectionClick('DOWN')}
+              onTouchStart={() => handleDirectionClick('DOWN')}
               aria-label="向下"
+              type="button"
             >
               ↓
             </button>
             <button 
               className={styles.controlButton} 
               onClick={() => handleDirectionClick('RIGHT')}
+              onTouchStart={() => handleDirectionClick('RIGHT')}
               aria-label="向右"
+              type="button"
             >
               →
             </button>
