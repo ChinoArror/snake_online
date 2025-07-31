@@ -201,7 +201,7 @@ export default function Home() {
   // 键盘控制
   useEffect(() => {
     const handleKeyDown = (e) => {
-      e.preventDefault();
+      // e.preventDefault(); // 去掉阻止默认行为，允许方向键和wasd键正常工作
       
       if (gameOver) return;
       
@@ -226,7 +226,7 @@ export default function Home() {
         case 'D':
           if (direction !== 'LEFT') setDirection('RIGHT');
           break;
-        case ' ':
+        case ' ': // 空格键暂停/继续
           setIsPaused(prev => !prev);
           break;
         default:
