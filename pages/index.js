@@ -18,6 +18,8 @@ export default function Home() {
   const [touchStart, setTouchStart] = useState({ x: 0, y: 0 }); // 触摸开始位置
   const [gameTime, setGameTime] = useState(0); // 游戏时间（秒）
   const [gameStartTime, setGameStartTime] = useState(null); // 游戏开始时间
+  const [debugInfo, setDebugInfo] = useState({ lastKey: '', lastTouch: '', hasFocus: false }); // 调试信息
+  const [showDebug, setShowDebug] = useState(false); // 是否显示调试信息
   
   const gameAreaRef = useRef(null);
   const gameLoopRef = useRef(null);
@@ -61,11 +63,38 @@ export default function Home() {
     resetGame();
   }, [gameSize]);
   
+  // 添加game-active类到body，防止移动设备上的滚动问题
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      document.body.classList.add('game-active');
+      
+      return () => {
+        document.body.classList.remove('game-active');
+      };
+    }
+  }, []);
+  
   // 确保游戏区域获得焦点，以便键盘事件能被正确捕获
   useEffect(() => {
     if (gameAreaRef.current) {
       gameAreaRef.current.focus();
     }
+  }, []);
+  
+  // 在游戏重置时也确保游戏区域获得焦点
+  useEffect(() => {
+    if (!gameOver && gameAreaRef.current) {
+      gameAreaRef.current.focus();
+    }
+  }, [gameOver]);
+  
+  // 在游戏活动时给body添加game-active类，防止移动设备上的滚动问题
+  useEffect(() => {
+    document.body.classList.add('game-active');
+    
+    return () => {
+      document.body.classList.remove('game-active');
+    };
   }, []);
   
   // 游戏时间计时器
@@ -99,6 +128,13 @@ export default function Home() {
     }
     
     gameLoopRef.current = setInterval(moveSnake, speed);
+    
+    // 确保游戏区域获得焦点
+    setTimeout(() => {
+      if (gameAreaRef.current) {
+        gameAreaRef.current.focus();
+      }
+    }, 100);
   };
 
   // 游戏主循环
@@ -208,19 +244,38 @@ export default function Home() {
   // 键盘控制
   useEffect(() => {
     const handleKeyDown = (e) => {
-      // 只有在游戏区域内或者按键是方向键、WASD或空格时才阻止默认行为
+      // 更新调试信息
+      setDebugInfo(prev => ({
+        ...prev,
+        lastKey: `${e.key} (code: ${e.keyCode})`,
+        hasFocus: document.activeElement === gameAreaRef.current
+      }));
+      
+      // 检测特殊组合键（Ctrl+D）切换调试模式
+      if (e.ctrlKey && (e.key === 'd' || e.key === 'D')) {
+        e.preventDefault();
+        setShowDebug(prev => !prev);
+        return;
+      }
+      
+      // 始终阻止游戏控制按键的默认行为
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'w', 'W', 'a', 'A', 's', 'S', 'd', 'D', ' '].includes(e.key)) {
-        // 阻止空格键的默认滚动行为
-        if (e.key === ' ') {
-          e.preventDefault();
-        }
-        // 阻止方向键的默认滚动行为
-        if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
-          e.preventDefault();
+        e.preventDefault();
+        e.stopPropagation(); // 阻止事件冒泡
+      }
+      
+      // 即使游戏结束，也允许空格键重新开始游戏
+      if (e.key === ' ') {
+        if (gameOver) {
+          resetGame();
+          return;
+        } else {
+          setIsPaused(prev => !prev);
+          return;
         }
       }
       
-      if (gameOver) return;
+      if (gameOver || isPaused) return;
       
       switch (e.key) {
         case 'ArrowUp':
@@ -243,69 +298,148 @@ export default function Home() {
         case 'D':
           if (direction !== 'LEFT') setDirection('RIGHT');
           break;
-        case ' ': // 空格键暂停/继续
-          setIsPaused(prev => !prev);
-          break;
         default:
           break;
       }
     };
 
-    // 添加键盘事件监听
-    window.addEventListener('keydown', handleKeyDown);
+    // 添加键盘事件监听到window对象，确保全局捕获
+    window.addEventListener('keydown', handleKeyDown, { capture: true });
+    document.addEventListener('keydown', handleKeyDown, { capture: true });
+    if (gameAreaRef.current) {
+      gameAreaRef.current.addEventListener('keydown', handleKeyDown, { capture: true });
+    }
+    
+    // 添加焦点变化监听
+    const handleFocusChange = () => {
+      setDebugInfo(prev => ({
+        ...prev,
+        hasFocus: document.activeElement === gameAreaRef.current
+      }));
+    };
+    
+    document.addEventListener('focusin', handleFocusChange);
+    document.addEventListener('focusout', handleFocusChange);
     
     // 清理函数
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [direction, gameOver]);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown, { capture: true });
+      document.removeEventListener('keydown', handleKeyDown, { capture: true });
+      if (gameAreaRef.current) {
+        gameAreaRef.current.removeEventListener('keydown', handleKeyDown, { capture: true });
+      }
+      document.removeEventListener('focusin', handleFocusChange);
+      document.removeEventListener('focusout', handleFocusChange);
+    };
+  }, [direction, gameOver, isPaused, resetGame, setShowDebug]);
 
   // 触摸控制（移动设备）
   const handleTouchStart = (e) => {
+    // 始终阻止默认行为，防止滚动
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // 更新调试信息
+    setDebugInfo(prev => ({
+      ...prev,
+      lastTouch: `start: (${e.touches[0]?.clientX || 'none'}, ${e.touches[0]?.clientY || 'none'})`,
+      hasFocus: document.activeElement === gameAreaRef.current
+    }));
+    
+    // 如果游戏结束或暂停，则不处理
+    if (gameOver) {
+      // 如果游戏结束，点击重新开始
+      resetGame();
+      return;
+    }
+    
+    if (isPaused) {
+      setIsPaused(false);
+      return;
+    }
+    
     const touch = e.touches[0];
     setTouchStart({
       x: touch.clientX,
       y: touch.clientY
     });
-    // 仅在游戏区域内阻止默认行为
-    if (e.target.closest(`.${styles.gameArea}`)) {
-      e.preventDefault();
+    
+    // 确保游戏区域获得焦点
+    if (gameAreaRef.current) {
+      gameAreaRef.current.focus();
     }
   };
 
   const handleTouchMove = (e) => {
-    // 仅在游戏区域内阻止默认行为
-    if (e.target.closest(`.${styles.gameArea}`)) {
-      e.preventDefault();
+    // 始终阻止默认行为，防止滚动
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // 更新调试信息
+    setDebugInfo(prev => ({
+      ...prev,
+      lastTouch: `move: (${e.touches[0]?.clientX || 'none'}, ${e.touches[0]?.clientY || 'none'})`,
+      hasFocus: document.activeElement === gameAreaRef.current
+    }));
+    
+    // 如果没有起始触摸点或游戏结束或暂停，则不处理
+    if (!touchStart || gameOver || isPaused) return;
+    
+    const touch = e.touches[0];
+    const deltaX = touch.clientX - touchStart.x;
+    const deltaY = touch.clientY - touchStart.y;
+    
+    // 确定主要的移动方向，降低灵敏度阈值以提高响应性
+    if (Math.abs(deltaX) > Math.abs(deltaY)) {
+      // 水平移动
+      if (deltaX > 20 && direction !== 'LEFT') {
+        setDirection('RIGHT');
+        // 更新触摸起点，使连续滑动更流畅
+        setTouchStart({
+          x: touch.clientX,
+          y: touch.clientY
+        });
+      } else if (deltaX < -20 && direction !== 'RIGHT') {
+        setDirection('LEFT');
+        // 更新触摸起点，使连续滑动更流畅
+        setTouchStart({
+          x: touch.clientX,
+          y: touch.clientY
+        });
+      }
+    } else {
+      // 垂直移动
+      if (deltaY > 20 && direction !== 'UP') {
+        setDirection('DOWN');
+        // 更新触摸起点，使连续滑动更流畅
+        setTouchStart({
+          x: touch.clientX,
+          y: touch.clientY
+        });
+      } else if (deltaY < -20 && direction !== 'DOWN') {
+        setDirection('UP');
+        // 更新触摸起点，使连续滑动更流畅
+        setTouchStart({
+          x: touch.clientX,
+          y: touch.clientY
+        });
+      }
     }
   };
 
   const handleTouchEnd = (e) => {
-    if (gameOver) return;
+    // 阻止默认行为
+    e.preventDefault();
+    e.stopPropagation();
     
-    const touch = e.changedTouches[0];
-    const deltaX = touch.clientX - touchStart.x;
-    const deltaY = touch.clientY - touchStart.y;
+    // 更新调试信息
+    setDebugInfo(prev => ({
+      ...prev,
+      lastTouch: `end: (${e.changedTouches[0]?.clientX || 'none'}, ${e.changedTouches[0]?.clientY || 'none'})`,
+      hasFocus: document.activeElement === gameAreaRef.current
+    }));
     
-    // 确定主要的移动方向
-    if (Math.abs(deltaX) > Math.abs(deltaY)) {
-      // 水平移动
-      if (deltaX > 30) {
-        if (direction !== 'LEFT') setDirection('RIGHT');
-      } else if (deltaX < -30) {
-        if (direction !== 'RIGHT') setDirection('LEFT');
-      }
-    } else {
-      // 垂直移动
-      if (deltaY > 30) {
-        if (direction !== 'UP') setDirection('DOWN');
-      } else if (deltaY < -30) {
-        if (direction !== 'DOWN') setDirection('UP');
-      }
-    }
-    
-    // 仅在游戏区域内阻止默认行为
-    if (e.target.closest(`.${styles.gameArea}`)) {
-      e.preventDefault();
-    }
+    setTouchStart(null);
   };
 
   // 方向按钮控制
@@ -453,6 +587,7 @@ export default function Home() {
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
+          onTouchCancel={handleTouchEnd}
           tabIndex="0" /* 使div可以接收键盘焦点 */
           role="button" /* 为了可访问性 */
           aria-label="游戏区域"
@@ -481,6 +616,32 @@ export default function Home() {
               </div>
             </div>
           )}
+          
+          {/* 调试信息 */}
+          {showDebug && (
+            <div className={styles.debugInfo}>
+              <p>最后按键: {debugInfo.lastKey}</p>
+              <p>最后触摸: {debugInfo.lastTouch}</p>
+              <p>游戏区域焦点: {debugInfo.hasFocus ? '是' : '否'}</p>
+              <p>方向: {direction}</p>
+              <button 
+                className={styles.debugToggle} 
+                onClick={() => setShowDebug(false)}
+              >
+                关闭调试
+              </button>
+            </div>
+          )}
+          
+          {/* 开启调试按钮 */}
+          {!showDebug && (
+            <button 
+              className={styles.debugButton} 
+              onClick={() => setShowDebug(true)}
+            >
+              调试
+            </button>
+          )}
         </div>
 
         <div className={styles.controls}>
@@ -488,7 +649,10 @@ export default function Home() {
             <button 
               className={styles.controlButton} 
               onClick={() => handleDirectionClick('UP')}
-              onTouchStart={() => handleDirectionClick('UP')}
+              onTouchStart={(e) => {
+                e.preventDefault(); // 阻止默认行为
+                handleDirectionClick('UP');
+              }}
               aria-label="向上"
               type="button"
             >
@@ -499,7 +663,10 @@ export default function Home() {
             <button 
               className={styles.controlButton} 
               onClick={() => handleDirectionClick('LEFT')}
-              onTouchStart={() => handleDirectionClick('LEFT')}
+              onTouchStart={(e) => {
+                e.preventDefault(); // 阻止默认行为
+                handleDirectionClick('LEFT');
+              }}
               aria-label="向左"
               type="button"
             >
@@ -508,7 +675,10 @@ export default function Home() {
             <button 
               className={styles.controlButton} 
               onClick={() => handleDirectionClick('DOWN')}
-              onTouchStart={() => handleDirectionClick('DOWN')}
+              onTouchStart={(e) => {
+                e.preventDefault(); // 阻止默认行为
+                handleDirectionClick('DOWN');
+              }}
               aria-label="向下"
               type="button"
             >
@@ -517,7 +687,10 @@ export default function Home() {
             <button 
               className={styles.controlButton} 
               onClick={() => handleDirectionClick('RIGHT')}
-              onTouchStart={() => handleDirectionClick('RIGHT')}
+              onTouchStart={(e) => {
+                e.preventDefault(); // 阻止默认行为
+                handleDirectionClick('RIGHT');
+              }}
               aria-label="向右"
               type="button"
             >
